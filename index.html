@@ -283,7 +283,7 @@
                 }
 
                 // Call Anthropic API
-                addDebugInfo('Calling Anthropic API...');
+                addDebugInfo('Calling Anthropic API... mimeType: ' + file.type);
                 const csvData = await callAnthropicAPI(apiKey, base64Image, file.type);
                 addDebugInfo('API call successful! Processing data...');
 
@@ -335,7 +335,7 @@
         async function callAnthropicAPI(apiKey, base64Image, mimeType) {
             try {
                 // Add cors-anywhere proxy to handle CORS issues
-                const useProxy = false; // Set to true if needed for testing
+                const useProxy = true; // Set to true if needed for testing
                 const apiUrl = useProxy
                     ? 'https://cors-anywhere.herokuapp.com/https://api.anthropic.com/v1/messages'
                     : 'https://api.anthropic.com/v1/messages';
@@ -425,6 +425,7 @@
                 }
             } catch (error) {
                 console.error('Error calling API:', error);
+                console.log(error);
                 throw new Error('Failed to call the API');
             }
         }
