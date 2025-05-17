@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Image Extractor</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background-color: #555555;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            width: 100%;
+            padding: 12px 20px;
+            margin: 8px 0;
+            display: inline-block;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 8px;
+            border: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .editable {
+            background-color: #fff8dc;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #3498db;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>CSV Image Extractor</h1>
+
+        <!-- API Key Panel -->
+        <div id="apiKeyPanel" class="panel">
+            <h2>Anthropic API Key</h2>
+            <p>Enter your Anthropic API key to use this tool. It will be stored in your browser's local storage.</p>
+            <input type="text" id="apiKey" placeholder="Enter your Anthropic API key...">
+            <button id="saveApiKey">Save API Key</button>
+            <div id="apiKeyStatus" class="status"></div>
+        </div>
+
+        <!-- Image Upload Panel -->
+        <div id="uploadPanel" class="panel hidden">
+            <h2>Upload Image</h2>
+            <p>Select an image containing tabular data to extract:</p>
+            <input type="file" id="imageFile" accept="image/*">
+            <button id="extractButton" disabled>Extract Data</button>
+            <button id="changeApiKey" class="secondary">Change API Key</button>
+            <div id="uploadStatus" class="status"></div>
+        </div>
+
+        <!-- Results Panel -->
+        <div id="resultsPanel" class="panel hidden">
+            <h2>Extracted Data</h2>
+            <p>Below is the extracted data. You can edit the values by clicking on them.</p>
+            <div class="table-container">
+                <table id="resultsTable"></table>
+            </div>
+            <button id="saveButton">Save CSV</button>
+            <button id="uploadNew" class="secondary">Process Another Image</button>
+            <div id="resultsStatus" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const apiKeyPanel = document.getElementById('apiKeyPanel');
+        const uploadPanel = document.getElementById('uploadPanel');
+        const resultsPanel = document.getElementById('resultsPanel');
+        const apiKeyInput = document.getElementById('apiKey');
+        const saveApiKeyButton = document.getElementById('saveApiKey');
+        const apiKeyStatus = document.getElementById('apiKeyStatus');
+        const imageFileInput = document.getElementById('imageFile');
+        const extractButton = document.getElementById('extractButton');
+        const changeApiKeyButton = document.getElementById('changeApiKey');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const resultsTable = document.getElementById('resultsTable');
+        const saveButton = document.getElementById('saveButton');
+        const uploadNewButton = document.getElementById('uploadNew');
+        const resultsStatus = document.getElementById('resultsStatus');
+
+        // Check if API key exists in localStorage
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedApiKey = localStorage.getItem('anthropicApiKey');
+            if (savedApiKey) {
+                apiKeyPanel.classList.add('hidden');
+                uploadPanel.classList.remove('hidden');
+                showStatus(uploadStatus, 'API key found. Ready to extract data.', 'info');
+            }
+        });
+
+        // Enable extract button when file is selected
+        imageFileInput.addEventListener('change', () => {
+            extractButton.disabled = !imageFileInput.files.length;
+        });
+
+        // Save API Key
+        saveApiKeyButton.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                showStatus(apiKeyStatus, 'Please enter a valid API key.', 'error');
+                return;
+            }
+
+            localStorage.setItem('anthropicApiKey', apiKey);
+            showStatus(apiKeyStatus, 'API key saved successfully!', 'success');
+
+            setTimeout(() => {
+                apiKeyPanel.classList.add('hidden');
+                uploadPanel.classList.remove('hidden');
+                showStatus(uploadStatus, 'Ready to extract data.', 'info');
+            }, 1000);
+        });
+
+        // Change API Key
+        changeApiKeyButton.addEventListener('click', () => {
+            uploadPanel.classList.add('hidden');
+            apiKeyPanel.classList.remove('hidden');
+            apiKeyInput.value = localStorage.getItem('anthropicApiKey') || '';
+        });
+
+        // Upload New Image
+        uploadNewButton.addEventListener('click', () => {
+            resultsPanel.classList.add('hidden');
+            uploadPanel.classList.remove('hidden');
+            imageFileInput.value = '';
+            extractButton.disabled = true;
+        });
+
+        // Extract Data from Image
+        extractButton.addEventListener('click', async () => {
+            const file = imageFileInput.files[0];
+            if (!file) {
+                showStatus(uploadStatus, 'Please select an image file.', 'error');
+                return;
+            }
+
+            extractButton.disabled = true;
+            showStatus(uploadStatus, 'Processing image... <div class="loader"></div>', 'info');
+
+            try {
+                // Convert image to base64
+                const base64Image = await fileToBase64(file);
+
+                // Get API key from localStorage
+                const apiKey = localStorage.getItem('anthropicApiKey');
+                if (!apiKey) {
+                    showStatus(uploadStatus, 'API key not found. Please set your API key.', 'error');
+                    extractButton.disabled = false;
+                    return;
+                }
+
+                // Call Anthropic API
+                const csvData = await callAnthropicAPI(apiKey, base64Image, file.type);
+
+                // Process and display the CSV data
+                processCSVData(csvData);
+
+                uploadPanel.classList.add('hidden');
+                resultsPanel.classList.remove('hidden');
+
+                showStatus(resultsStatus, 'Data extracted successfully! You can edit the table and save when done.', 'success');
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus(uploadStatus, `Error: ${error.message}`, 'error');
+                extractButton.disabled = false;
+            }
+        });
+
+        // Save CSV
+        saveButton.addEventListener('click', () => {
+            try {
+                const csvContent = tableToCSV(resultsTable);
+                downloadCSV(csvContent, 'extracted_data.csv');
+                showStatus(resultsStatus, 'CSV file downloaded successfully!', 'success');
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus(resultsStatus, `Error saving CSV: ${error.message}`, 'error');
+            }
+        });
+
+        // Utility Functions
+        function showStatus(element, message, type) {
+            element.innerHTML = message;
+            element.className = `status ${type}`;
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    // Extract the base64 data from the data URL
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        async function callAnthropicAPI(apiKey, base64Image, mimeType) {
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: "claude-3-7-sonnet-20250219",
+                    max_tokens: 2048,
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                {
+                                    type: "image",
+                                    source: {
+                                        type: "base64",
+                                        media_type: mimeType,
+                                        data: base64Image
+                                    }
+                                },
+                                {
+                                    type: "text",
+                                    text: "Please extract the data from this image and return it in CSV format. Specifically, we care about the names on the left, and all filled values on the right. If a number is missing, please fill it with NA. If a number is unreadable or you're not confident, please fill it with 'UN'. Place the csv data inside here tags like so:\n\nid,name,data1,data2,data3,...\n1,John Doe,123,456,789,...\n2,Jane Smith,234,567,890,...\n...\n"
+                                }
+                            ]
+                        }
+                    ]
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`API error: ${errorData.error?.message || response.statusText}`);
+            }
+
+            const data = await response.json();
+            const content = data.content[0].text;
+
+            // Extract CSV data between the tags
+            try {
+                const csvMatch = content.match(/```([\s\S]*?)```/);
+                if (csvMatch && csvMatch[1]) {
+                    return csvMatch[1].trim();
+                } else {
+                    throw new Error('Could not extract CSV data from the response');
+                }
+            } catch (error) {
+                console.error('Error parsing response:', error);
+                console.log('Full response:', content);
+                throw new Error('Failed to parse the API response');
+            }
+        }
+
+        function processCSVData(csvString) {
+            const lines = csvString.trim().split('\n');
+            const headers = lines[0].split(',');
+            const rows = lines.slice(1);
+
+            // Check for empty columns (all NA values)
+            const columnHasValues = new Array(headers.length).fill(false);
+
+            rows.forEach(row => {
+                const cells = row.split(',');
+                cells.forEach((cell, index) => {
+                    if (cell !== 'NA' && cell !== '') {
+                        columnHasValues[index] = true;
+                    }
+                });
+            });
+
+            // Filter out columns that only have NA values
+            const validColumnIndices = columnHasValues
+                .map((hasValue, index) => hasValue ? index : -1)
+                .filter(index => index !== -1);
+
+            // Create filtered headers and data
+            const filteredHeaders = validColumnIndices.map(index => headers[index]);
+            const filteredRows = rows.map(row => {
+                const cells = row.split(',');
+                return validColumnIndices.map(index => cells[index] || 'NA');
+            });
+
+            // Generate table HTML
+            let tableHTML = '<thead><tr>';
+            filteredHeaders.forEach(header => {
+                tableHTML += `<th>${header}</th>`;
+            });
+            tableHTML += '</tr></thead><tbody>';
+
+            filteredRows.forEach(row => {
+                tableHTML += '<tr>';
+                row.forEach((cell, cellIndex) => {
+                    // Make numerical values editable
+                    if (cellIndex > 0 && (cell === 'NA' || cell === 'UN' || !isNaN(parseFloat(cell)))) {
+                        tableHTML += `<td class="editable" contenteditable="true">${cell}</td>`;
+                    } else {
+                        tableHTML += `<td>${cell}</td>`;
+                    }
+                });
+                tableHTML += '</tr>';
+            });
+            tableHTML += '</tbody>';
+
+            resultsTable.innerHTML = tableHTML;
+        }
+
+        function tableToCSV(table) {
+            const rows = table.querySelectorAll('tr');
+            const csvRows = [];
+
+            for (const row of rows) {
+                const cells = row.querySelectorAll('th, td');
+                const csvRow = Array.from(cells).map(cell => {
+                    // Escape quotes and wrap in quotes if there are commas
+                    let value = cell.textContent;
+                    if (value.includes(',') || value.includes('"')) {
+                        value = `"${value.replace(/"/g, '""')}"`;
+                    }
+                    return value;
+                }).join(',');
+                csvRows.push(csvRow);
+            }
+
+            return csvRows.join('\n');
+        }
+
+        function downloadCSV(csvContent, filename) {
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Make table cells editable
+        resultsTable.addEventListener('click', (event) => {
+            if (event.target.classList.contains('editable')) {
+                event.target.focus();
+            }
+        });
+    </script>
+</body>
+
+</html>
